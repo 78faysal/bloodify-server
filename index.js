@@ -38,6 +38,22 @@ async function run() {
       res.send(user);
     });
 
+    app.get("/users", async (req, res) => {
+      const queryEmail = req.query.email;
+      if (queryEmail) {
+        const filterQuery = { email: queryEmail };
+        const user = await userCollection.findOne(filterQuery);
+        if (user.role === "admin") {
+          return res.send({ admin: true });
+        } else {
+          return res.send({ admin: false });
+        }
+      } else {
+        const result = await userCollection.find().toArray();
+        res.send(result);
+      }
+    });
+
     app.patch("/users/:email", async (req, res) => {
       const email = req.params.email;
       const updatedInfo = req.body;
@@ -58,11 +74,6 @@ async function run() {
       res.send(user);
     });
 
-    app.get("/users", async (req, res) => {
-      const result = await userCollection.find().toArray();
-      res.send(result);
-    });
-
     app.post("/users", async (req, res) => {
       const user = req.body;
       const result = await userCollection.insertOne(user);
@@ -70,23 +81,73 @@ async function run() {
     });
 
     // donation requests api
+    app.get("/donation_requests/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const result = await donationRequestCollection.findOne(filter);
+      res.send(result);
+    });
+
     app.get("/donation_requests", async (req, res) => {
-      const requestLength = parseInt(req.query.length);
-      console.log(requestLength);
-      if (requestLength) {
-        const allRequests = await donationRequestCollection.find().toArray();
-        const neededData = allRequests.slice(0, requestLength);
-        // console.log(neededData.length);
-        res.send(neededData);
+      const status = req.query;
+      const query = { status: status.status };
+      // console.log(query);
+      if (status) {
+        const result = await donationRequestCollection.find(query).toArray();
+        // console.log(result);
+        res.send(result);
       } else {
         const result = await donationRequestCollection.find().toArray();
         res.send(result);
       }
     });
 
+    app.patch("/donation_requests/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const {
+        requester_name,
+        requester_email,
+        district,
+        upazilla,
+        recipient_name,
+        hospital,
+        adresss,
+        date,
+        time,
+        description,
+      } = req.body;
+      const updatedDoc = {
+        $set: {
+          requester_name,
+          requester_email,
+          district,
+          upazilla,
+          recipient_name,
+          hospital,
+          adresss,
+          date,
+          time,
+          description,
+        },
+      };
+      const result = await donationRequestCollection.updateOne(
+        filter,
+        updatedDoc
+      );
+      res.send(result);
+    });
+
     app.post("/donation_requests", async (req, res) => {
       const reqestData = req.body;
       const result = await donationRequestCollection.insertOne(reqestData);
+      res.send(result);
+    });
+
+    app.delete("/donation_requests/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const result = await donationRequestCollection.deleteOne(filter);
       res.send(result);
     });
 
