@@ -3,12 +3,12 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middlewares
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.jq69c8i.mongodb.net/?retryWrites=true&w=majority`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -29,6 +29,7 @@ async function run() {
     const donationRequestCollection = client
       .db("Bloodify")
       .collection("donation_requests");
+    const blogCollection = client.db("Bloodify").collection("blogs");
 
     // users api
     app.get("/users/:email", async (req, res) => {
@@ -38,16 +39,34 @@ async function run() {
       res.send(user);
     });
 
+    app.get("/users/admin/:email", async (req, res) => {
+      const query = { email: req.params?.email };
+      // console.log(query);
+      const user = await userCollection.findOne(query);
+      if (user.role === "admin") {
+        return res.send({ admin: true });
+      } else {
+        return res.send({ admin: false });
+      }
+    });
+
+    app.get("/users/volunteer/:email", async (req, res) => {
+      const query = { email: req.params?.email };
+      const user = await userCollection.findOne(query);
+      if (user.role === "volunteer") {
+        return res.send({ volunteer: true });
+      } else {
+        return res.send({ volunteer: false });
+      }
+    });
+
     app.get("/users", async (req, res) => {
-      const queryEmail = req.query.email;
-      if (queryEmail) {
-        const filterQuery = { email: queryEmail };
-        const user = await userCollection.findOne(filterQuery);
-        if (user.role === "admin") {
-          return res.send({ admin: true });
-        } else {
-          return res.send({ admin: false });
-        }
+      const queryStatus = req.query;
+      // console.log(queryStatus);
+      if (queryStatus) {
+        const filterUser = { status: queryStatus };
+        const users = await userCollection.find(queryStatus).toArray();
+        res.send(users);
       } else {
         const result = await userCollection.find().toArray();
         res.send(result);
@@ -57,9 +76,27 @@ async function run() {
     app.patch("/users/:email", async (req, res) => {
       const email = req.params.email;
       const updatedInfo = req.body;
+      const filter = { email: email };
+      // console.log(updatedInfo);
+      if (updatedInfo.status) {
+        const updatedDoc = {
+          $set: {
+            status: updatedInfo?.status,
+          },
+        };
+        const user = await userCollection.updateOne(filter, updatedDoc);
+        return res.send(user);
+      } else if (updatedInfo.role) {
+        const updatedDoc = {
+          $set: {
+            role: updatedInfo?.role,
+          },
+        };
+        const user = await userCollection.updateOne(filter, updatedDoc);
+        return res.send(user);
+      }
       const { name, image, blood, division, district, password } = updatedInfo;
       // console.log(updatedInfo);
-      const filter = { email: email };
       const updatedDoc = {
         $set: {
           name,
@@ -83,28 +120,66 @@ async function run() {
     // donation requests api
     app.get("/donation_requests/:id", async (req, res) => {
       const id = req.params.id;
+      // console.log(id);
       const filter = { _id: new ObjectId(id) };
       const result = await donationRequestCollection.findOne(filter);
+      // console.log(result);
       res.send(result);
+    });
+
+    app.get("/donation_requests/filter/:email", async (req, res) => {
+      const email = req.params.email;
+      const status = req.query;
+      // console.log(email, status);
+      const query = { requester_email: email };
+      const allRequests = await donationRequestCollection.find(query).toArray();
+      // console.log(allRequests);
+      if(status.status === 'all'){
+        return res.send(allRequests)
+      }
+      else if(status.status) {
+        const query = { status: status.status };
+        const requestsOfStatus = await allRequests.filter(
+          (request) => request.status === status.status
+        );
+        return res.send(requestsOfStatus);
+      }
+      res.send(allRequests);
     });
 
     app.get("/donation_requests", async (req, res) => {
       const status = req.query;
       const query = { status: status.status };
       // console.log(query);
-      if (status) {
+      if (status.status) {
         const result = await donationRequestCollection.find(query).toArray();
         // console.log(result);
-        res.send(result);
-      } else {
-        const result = await donationRequestCollection.find().toArray();
-        res.send(result);
+        return res.send(result);
       }
+      const result = await donationRequestCollection.find().toArray();
+      res.send(result);
     });
 
     app.patch("/donation_requests/:id", async (req, res) => {
       const id = req.params.id;
+      // console.log(id)
       const filter = { _id: new ObjectId(id) };
+      const { donor_name, donor_email, status } = req.body;
+      if (status) {
+        const updatedDoc = {
+          $set: {
+            donor_name,
+            donor_email,
+            status,
+          },
+        };
+        const result = await donationRequestCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+        return res.send(result);
+      }
+
       const {
         requester_name,
         requester_email,
@@ -129,6 +204,9 @@ async function run() {
           date,
           time,
           description,
+          donor_name,
+          donor_email,
+          status,
         },
       };
       const result = await donationRequestCollection.updateOne(
@@ -146,9 +224,74 @@ async function run() {
 
     app.delete("/donation_requests/:id", async (req, res) => {
       const id = req.params.id;
+      // console.log(id)
       const filter = { _id: new ObjectId(id) };
       const result = await donationRequestCollection.deleteOne(filter);
       res.send(result);
+    });
+
+    // content management api
+    // DONE: check this api work perfectly
+    app.get("/blogs", async (req, res) => {
+      const status = req.query;
+      if (status.status === "all") {
+        const allBlogs = await blogCollection.find().toArray();
+        return res.send(allBlogs);
+      } else if (status.status) {
+        const query = { status: status.status };
+        const filteredBlogs = await blogCollection.find(query).toArray();
+        return res.send(filteredBlogs);
+      }
+      const result = await blogCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/blogs", async (req, res) => {
+      const blog = req.body;
+      const result = await blogCollection.insertOne(blog);
+      res.send(result);
+    });
+
+    // DONE: check thsi api work perfectly
+    app.patch("/blogs/:id", async (req, res) => {
+      const status = req.query.status;
+      console.log(status);
+      const filter = { _id: new ObjectId(req.params.id) };
+      if (status === "draft") {
+        const updatedDoc = {
+          $set: {
+            status: "published",
+          },
+        };
+        const result = await blogCollection.updateOne(filter, updatedDoc);
+        return res.send(result);
+      } else if (status === "published") {
+        const updatedDoc = {
+          $set: {
+            status: "draft",
+          },
+        };
+        const result = await blogCollection.updateOne(filter, updatedDoc);
+        return res.send(result);
+      }
+    });
+
+    app.delete("/blogs/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await blogCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // statistics
+    app.get("/statistics", async (req, res) => {
+      const users = await userCollection.find().toArray();
+      const donationRequests = await donationRequestCollection.find().toArray();
+      //TODO: total funding
+      res.send({
+        users: users.length,
+        donationRequests: donationRequests.length,
+      });
     });
 
     // Send a ping to confirm a successful connection
