@@ -63,14 +63,17 @@ async function run() {
     app.get("/users", async (req, res) => {
       const queryStatus = req.query;
       // console.log(queryStatus);
-      if (queryStatus) {
+      if (queryStatus.status) {
         const filterUser = { status: queryStatus };
         const users = await userCollection.find(queryStatus).toArray();
-        res.send(users);
-      } else {
-        const result = await userCollection.find().toArray();
-        res.send(result);
+        return res.send(users);
       }
+      // const filter = JSON.parse(req.query.query);
+      // console.log(filter);
+      // const query = {blood: filter.blood, district: filter.district};
+      // console.log(result);
+      const result = await userCollection.find().toArray();
+      res.send(result);
     });
 
     app.patch("/users/:email", async (req, res) => {
@@ -134,10 +137,9 @@ async function run() {
       const query = { requester_email: email };
       const allRequests = await donationRequestCollection.find(query).toArray();
       // console.log(allRequests);
-      if(status.status === 'all'){
-        return res.send(allRequests)
-      }
-      else if(status.status) {
+      if (status.status === "all") {
+        return res.send(allRequests);
+      } else if (status.status) {
         const query = { status: status.status };
         const requestsOfStatus = await allRequests.filter(
           (request) => request.status === status.status
@@ -165,7 +167,20 @@ async function run() {
       // console.log(id)
       const filter = { _id: new ObjectId(id) };
       const { donor_name, donor_email, status } = req.body;
-      if (status) {
+      const { targetStatus } = req.body;
+      if (targetStatus) {
+        const updatedDoc = {
+          $set: {
+            status: targetStatus,
+          },
+        };
+        const result = await donationRequestCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+        return res.send(result);
+      }
+      if (status && donor_name && donor_email) {
         const updatedDoc = {
           $set: {
             donor_name,
