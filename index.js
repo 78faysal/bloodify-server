@@ -4,6 +4,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const jwt = require("jsonwebtoken");
 
 // middlewares
 app.use(cors());
@@ -30,6 +31,15 @@ async function run() {
       .db("Bloodify")
       .collection("donation_requests");
     const blogCollection = client.db("Bloodify").collection("blogs");
+
+    // jwt api
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.JWT_SECRET_TOKEN, {
+        expiresIn: "5h",
+      });
+      res.send({ token });
+    });
 
     // users api
     app.get("/users/:email", async (req, res) => {
