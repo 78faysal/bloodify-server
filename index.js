@@ -157,6 +157,7 @@ async function run() {
 
     app.get("/users/donor", async (req, res) => {
       console.log("inside ");
+      console.log(req.query);
       // const filterData = req.query;
     });
 
@@ -205,7 +206,7 @@ async function run() {
     });
 
     // donation requests api
-    app.get("/donation_requests/:id", async (req, res) => {
+    app.get("/donation_requests/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       // console.log(id);
       const filter = { _id: new ObjectId(id) };
@@ -251,72 +252,62 @@ async function run() {
       res.send(result);
     });
 
-
     app.get("/donation_requests/all", async (req, res) => {
-      console.log('inside');
-      const allRequests = await donationRequestCollection.find().toArray();
-      return res.send(allRequests);
-      // const status = req.query;
-      // const query = { status: status.status };
-      // console.log('inside api');
-      // if (status.status === "all") {
-      // }
-      // // if (status.status) {
-      // //   const result = await donationRequestCollection.find(query).toArray();
-      // //   // console.log(result);
-      // //   return res.send(result);
-      // // }
-      // const result = await donationRequestCollection.find().toArray();
-      // res.send(result);
+      console.log("inside");
+      const status = req.query;
+      const query = { status: status.status };
+      console.log("inside api");
+      if (status.status === "all") {
+        const allRequests = await donationRequestCollection.find().toArray();
+        return res.send(allRequests);
+      }
+      if (status.status) {
+        const result = await donationRequestCollection.find(query).toArray();
+        // console.log(result);
+        return res.send(result);
+      }
+      const result = await donationRequestCollection.find().toArray();
+      res.send(result);
     });
 
-    app.patch("/donation_requests/:id", async (req, res) => {
-      const id = req.params.id;
-      // console.log(id)
-      const filter = { _id: new ObjectId(id) };
-      const { donor_name, donor_email, status } = req.body;
-      const { targetStatus } = req.body;
-      if (targetStatus) {
-        const updatedDoc = {
-          $set: {
-            status: targetStatus,
-          },
-        };
-        const result = await donationRequestCollection.updateOne(
-          filter,
-          updatedDoc
-        );
-        return res.send(result);
-      }
-      if (status && donor_name && donor_email) {
-        const updatedDoc = {
-          $set: {
-            donor_name,
-            donor_email,
-            status,
-          },
-        };
-        const result = await donationRequestCollection.updateOne(
-          filter,
-          updatedDoc
-        );
-        return res.send(result);
-      }
+    app.patch(
+      "/donation_requests/:id",
+      verifyToken,
+      verifyAdminOrVolunteer,
+      async (req, res) => {
+        const id = req.params.id;
+        // console.log(id)
+        const filter = { _id: new ObjectId(id) };
+        const { donor_name, donor_email, status } = req.body;
+        const { targetStatus } = req.body;
+        if (targetStatus) {
+          const updatedDoc = {
+            $set: {
+              status: targetStatus,
+            },
+          };
+          const result = await donationRequestCollection.updateOne(
+            filter,
+            updatedDoc
+          );
+          return res.send(result);
+        }
+        if (status && donor_name && donor_email) {
+          const updatedDoc = {
+            $set: {
+              donor_name,
+              donor_email,
+              status,
+            },
+          };
+          const result = await donationRequestCollection.updateOne(
+            filter,
+            updatedDoc
+          );
+          return res.send(result);
+        }
 
-      const {
-        requester_name,
-        requester_email,
-        district,
-        upazilla,
-        recipient_name,
-        hospital,
-        adresss,
-        date,
-        time,
-        description,
-      } = req.body;
-      const updatedDoc = {
-        $set: {
+        const {
           requester_name,
           requester_email,
           district,
@@ -327,17 +318,31 @@ async function run() {
           date,
           time,
           description,
-          donor_name,
-          donor_email,
-          status,
-        },
-      };
-      const result = await donationRequestCollection.updateOne(
-        filter,
-        updatedDoc
-      );
-      res.send(result);
-    });
+        } = req.body;
+        const updatedDoc = {
+          $set: {
+            requester_name,
+            requester_email,
+            district,
+            upazilla,
+            recipient_name,
+            hospital,
+            adresss,
+            date,
+            time,
+            description,
+            donor_name,
+            donor_email,
+            status,
+          },
+        };
+        const result = await donationRequestCollection.updateOne(
+          filter,
+          updatedDoc
+        );
+        res.send(result);
+      }
+    );
 
     app.post("/donation_requests", async (req, res) => {
       const reqestData = req.body;
@@ -345,17 +350,22 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/donation_requests/:id", async (req, res) => {
-      const id = req.params.id;
-      // console.log(id)
-      const filter = { _id: new ObjectId(id) };
-      const result = await donationRequestCollection.deleteOne(filter);
-      res.send(result);
-    });
+    app.delete(
+      "/donation_requests/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        // console.log(id)
+        const filter = { _id: new ObjectId(id) };
+        const result = await donationRequestCollection.deleteOne(filter);
+        res.send(result);
+      }
+    );
 
     // content management api
     // DONE: check this api work perfectly
-    app.get("/blogs", async (req, res) => {
+    app.get("/blogs", verifyToken, verifyAdminOrVolunteer, async (req, res) => {
       const status = req.query;
       if (status.status === "all") {
         const allBlogs = await blogCollection.find().toArray();
@@ -369,14 +379,19 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/blogs", async (req, res) => {
-      const blog = req.body;
-      const result = await blogCollection.insertOne(blog);
-      res.send(result);
-    });
+    app.post(
+      "/blogs",
+      verifyToken,
+      verifyAdminOrVolunteer,
+      async (req, res) => {
+        const blog = req.body;
+        const result = await blogCollection.insertOne(blog);
+        res.send(result);
+      }
+    );
 
     // DONE: check thsi api work perfectly
-    app.patch("/blogs/:id", async (req, res) => {
+    app.patch("/blogs/:id", verifyToken, verifyAdmin, async (req, res) => {
       const status = req.query.status;
       console.log(status);
       const filter = { _id: new ObjectId(req.params.id) };
@@ -399,7 +414,7 @@ async function run() {
       }
     });
 
-    app.delete("/blogs/:id", async (req, res) => {
+    app.delete("/blogs/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await blogCollection.deleteOne(query);
