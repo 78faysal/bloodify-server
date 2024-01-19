@@ -32,9 +32,37 @@ async function run() {
       .collection("donation_requests");
     const blogCollection = client.db("Bloodify").collection("blogs");
 
+    // middlewares
+    const verifyToken = (req, res, next) => {
+      if (!req.headers?.authorization) {
+        return res.status(401).send({ message: "Unauthorized access" });
+      }
+
+      const token = req.headers?.authorization.split(" ")[1];
+      jwt.verify(token, process.env.JWT_SECRET_TOKEN, (err, decoded) => {
+        if (err) {
+          return res.status(403).send({ message: "Forbidden access" });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === "admin";
+      if (!isAdmin) {
+        return res.status(403).send("Forbidden Access");
+      }
+      next();
+    };
+
     // jwt api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
+      // console.log(user);
       const token = jwt.sign(user, process.env.JWT_SECRET_TOKEN, {
         expiresIn: "5h",
       });
@@ -70,7 +98,7 @@ async function run() {
       }
     });
 
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       const queryStatus = req.query;
       // console.log(queryStatus);
       if (queryStatus.status) {
@@ -140,24 +168,30 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/donation_requests/filter/:email", async (req, res) => {
-      const email = req.params.email;
-      const status = req.query;
-      // console.log(email, status);
-      const query = { requester_email: email };
-      const allRequests = await donationRequestCollection.find(query).toArray();
-      // console.log(allRequests);
-      if (status.status === "all") {
-        return res.send(allRequests);
-      } else if (status.status) {
-        const query = { status: status.status };
-        const requestsOfStatus = await allRequests.filter(
-          (request) => request.status === status.status
-        );
-        return res.send(requestsOfStatus);
+    app.get(
+      "/donation_requests/filter/:email",
+      verifyToken,
+      async (req, res) => {
+        const email = req.params.email;
+        const status = req.query;
+        // console.log(email, status);
+        const query = { requester_email: email };
+        const allRequests = await donationRequestCollection
+          .find(query)
+          .toArray();
+        // console.log(allRequests);
+        if (status.status === "all") {
+          return res.send(allRequests);
+        } else if (status.status) {
+          const query = { status: status.status };
+          const requestsOfStatus = await allRequests.filter(
+            (request) => request.status === status.status
+          );
+          return res.send(requestsOfStatus);
+        }
+        res.send(allRequests);
       }
-      res.send(allRequests);
-    });
+    );
 
     app.get("/donation_requests", async (req, res) => {
       const status = req.query;
