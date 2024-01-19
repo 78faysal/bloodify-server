@@ -5,6 +5,7 @@ const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // middlewares
 app.use(cors());
@@ -31,9 +32,11 @@ async function run() {
       .db("Bloodify")
       .collection("donation_requests");
     const blogCollection = client.db("Bloodify").collection("blogs");
+    const paymentCollection = client.db("Bloodify").collection("payments");
 
     // middlewares
     const verifyToken = (req, res, next) => {
+      // console.log(req.headers);
       if (!req.headers?.authorization) {
         return res.status(401).send({ message: "Unauthorized access" });
       }
@@ -59,6 +62,18 @@ async function run() {
       next();
     };
 
+    const verifyAdminOrVolunteer = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdminOrVolunteer =
+        user?.role === "admin" || user?.role === "volunteer";
+      if (!isAdminOrVolunteer) {
+        return res.status(403).send("Forbidden Access");
+      }
+      next();
+    };
+
     // jwt api
     app.post("/jwt", async (req, res) => {
       const user = req.body;
@@ -67,6 +82,32 @@ async function run() {
         expiresIn: "5h",
       });
       res.send({ token });
+    });
+
+    // client secret for stripe payment and payment history
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price);
+      if (!price || amount < 1) {
+        return;
+      }
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+
+    app.get("/payments", async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/payments", async (req, res) => {
+      const paymentInfo = req.body;
+      const result = await paymentCollection.insertOne(paymentInfo);
+      res.send(result);
     });
 
     // users api
@@ -112,6 +153,11 @@ async function run() {
       // console.log(result);
       const result = await userCollection.find().toArray();
       res.send(result);
+    });
+
+    app.get("/users/donor", async (req, res) => {
+      console.log("inside ");
+      // const filterData = req.query;
     });
 
     app.patch("/users/:email", async (req, res) => {
@@ -196,7 +242,6 @@ async function run() {
     app.get("/donation_requests", async (req, res) => {
       const status = req.query;
       const query = { status: status.status };
-      // console.log(query);
       if (status.status) {
         const result = await donationRequestCollection.find(query).toArray();
         // console.log(result);
@@ -204,6 +249,25 @@ async function run() {
       }
       const result = await donationRequestCollection.find().toArray();
       res.send(result);
+    });
+
+
+    app.get("/donation_requests/all", async (req, res) => {
+      console.log('inside');
+      const allRequests = await donationRequestCollection.find().toArray();
+      return res.send(allRequests);
+      // const status = req.query;
+      // const query = { status: status.status };
+      // console.log('inside api');
+      // if (status.status === "all") {
+      // }
+      // // if (status.status) {
+      // //   const result = await donationRequestCollection.find(query).toArray();
+      // //   // console.log(result);
+      // //   return res.send(result);
+      // // }
+      // const result = await donationRequestCollection.find().toArray();
+      // res.send(result);
     });
 
     app.patch("/donation_requests/:id", async (req, res) => {
@@ -346,10 +410,16 @@ async function run() {
     app.get("/statistics", async (req, res) => {
       const users = await userCollection.find().toArray();
       const donationRequests = await donationRequestCollection.find().toArray();
-      //TODO: total funding
+      const allPayments = await paymentCollection.find().toArray();
+
+      const totalFundings = allPayments.reduce(
+        (sum, payment) => sum + payment.amount,
+        0
+      );
       res.send({
         users: users.length,
         donationRequests: donationRequests.length,
+        totalFundings,
       });
     });
 
